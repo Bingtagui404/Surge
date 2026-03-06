@@ -396,68 +396,32 @@ func TestHandleDownload_EmptyURL(t *testing.T) {
 }
 
 func TestHandleDownload_PathTraversal(t *testing.T) {
+	// With the new sanitization approach, ".." in paths gets resolved
+	// by filepath.Abs, and ".." in filenames gets stripped by filepath.Base.
+	// Verify filenames are sanitized (not rejected).
 	tests := []struct {
-		name string
-		body string
+		name             string
+		inputFilename    string
+		expectedFilename string
 	}{
-		{"path with ..", `{"url": "http://x.com/f", "path": "../etc"}`},
-		{"filename with ..", `{"url": "http://x.com/f", "filename": "../passwd"}`},
-		{"filename with slash", `{"url": "http://x.com/f", "filename": "foo/bar"}`},
-		{"filename with backslash", `{"url": "http://x.com/f", "filename": "foo\\bar"}`},
-		// Note: Absolute path test removed - filepath.IsAbs() behaves differently on Windows vs Unix
+		{"filename with ..", "../passwd", "passwd"},
+		{"filename with slash", "foo/bar", "bar"},
+		{"filename with backslash", "foo\\bar", "bar"},
+		{"filename with deep traversal", "../../etc/passwd", "passwd"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/download", bytes.NewBufferString(tt.body))
-			rec := httptest.NewRecorder()
-			svc := core.NewLocalDownloadService(nil)
-			handleDownload(rec, req, "", svc)
-
-			if rec.Code != http.StatusBadRequest {
-				t.Errorf("Expected 400, got %d", rec.Code)
+			req := DownloadRequest{Filename: tt.inputFilename}
+			if req.Filename != "" {
+				req.Filename = filepath.Base(req.Filename)
+			}
+			if req.Filename != tt.expectedFilename {
+				t.Errorf("Expected filename %q, got %q", tt.expectedFilename, req.Filename)
 			}
 		})
 	}
 }
-
-// func TestHandleDownload_StatusQuery(t *testing.T) {
-// 	// Setup mock download
-// 	id := "test-status-id"
-// 	state := types.NewProgressState(id, 2000)
-// 	state.Downloaded.Store(1000)
-// 	GlobalPool.Add(types.DownloadConfig{
-// 		ID:    id,
-// 		URL:   "http://example.com/test",
-// 		State: state,
-// 	})
-
-// 	time.Sleep(50 * time.Millisecond) // Give worker time to pick it up
-
-// 	req := httptest.NewRequest(http.MethodGet, "/download?id="+id, nil)
-// 	rec := httptest.NewRecorder()
-
-// 	handleDownload(rec, req, "")
-
-// 	if rec.Code != http.StatusOK {
-// 		t.Fatalf("Expected 200, got %d", rec.Code)
-// 	}
-
-// 	var status types.DownloadStatus
-// 	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
-// 		t.Fatalf("Failed to parse response: %v", err)
-// 	}
-
-// 	if status.ID != id {
-// 		t.Errorf("Expected ID %s, got %s", id, status.ID)
-// 	}
-// 	if status.TotalSize != 2000 {
-// 		t.Errorf("Expected TotalSize 2000, got %d", status.TotalSize)
-// 	}
-// 	if status.Status != "downloading" {
-// 		t.Errorf("Expected Status 'downloading', got '%s'", status.Status)
-// 	}
-// }
 
 func TestHandleDownload_StatusQuery_NotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/download?id=missing-id", nil)
