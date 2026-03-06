@@ -545,13 +545,17 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		return
 	}
 
-	if strings.Contains(req.Path, "..") || strings.Contains(req.Filename, "..") {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
-		return
+	if req.Filename != "" {
+		req.Filename = filepath.Base(req.Filename)
 	}
-	if strings.Contains(req.Filename, "/") || strings.Contains(req.Filename, "\\") {
-		http.Error(w, "Invalid filename", http.StatusBadRequest)
-		return
+
+	if req.Path != "" && !req.RelativeToDefaultDir {
+		absPath, err := filepath.Abs(req.Path)
+		if err != nil {
+			http.Error(w, "Invalid Path", http.StatusBadRequest)
+			return
+		}
+		req.Path = absPath
 	}
 
 	utils.Debug("Received download request: URL=%s, Path=%s", req.URL, req.Path)
